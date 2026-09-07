@@ -20,14 +20,14 @@ servicio) son los mismos que en una plataforma IoT de produccion.
 ## Arquitectura
 
 ```
-  API publica          data/raw/        data/processed/     data/warehouse/      output/
- (Open-Meteo AQ)         *.json         *.parquet           *.parquet          dashboard.png
-       |                   |                 |                   |               airquality.db
-       v                   v                 v                   v                   v
-  [1] INGESTA  ->  [2] DATA QUALITY  ->  [3] TRANSFORM  ->  [4] LOAD (SQLite)  ->  [5] VISUALIZE
-   descarga +        valida, limpia,      agregaciones       serving layer         dashboard PNG
-   raw layer +       deduplica,           por ventana        consultable via SQL   + consultas SQL
-   fallback offline  detecta outliers     temporal / ranking
+  API publica          data/raw/        data/processed/     data/warehouse/                  output/
+ (Open-Meteo AQ)         *.json         *.parquet           *.parquet                      dashboard.png
+       |                   |                 |                   |                           airquality.db
+       v                   v                 v                   v                               v
+  [1] INGESTA  ->  [2] DATA QUALITY  ->  [3] TRANSFORM  ->  [4] FORECAST  ->  [5] LOAD (SQLite)  ->  [6] VISUALIZE
+   descarga +        valida, limpia,      agregaciones       regresion         serving layer         dashboard PNG
+   raw layer +       deduplica,           por ventana        PM2.5 (t+1h)      consultable via SQL   + consultas SQL
+   fallback offline  detecta outliers     temporal / ranking por estacion
 ```
 
 Cada etapa **lee de la anterior y escribe para la siguiente** (etapas idempotentes),
@@ -40,8 +40,9 @@ igual que las tareas de un DAG de Airflow. Un solo comando ejecuta todo.
 | 1 | **Ingesta** | Descarga telemetria horaria de cada estacion via API REST. Guarda el JSON crudo intacto. Fallback a datos sinteticos si no hay red. | Raw layer, idempotencia, linaje, tolerancia a fallos |
 | 2 | **Data quality** | Pasa a formato tabular largo; detecta y elimina nulos, outliers (fuera de rango fisico) y duplicados. Reporta % aprovechado. | Data validation, deduplicacion, calidad de datos |
 | 3 | **Transformacion** | Agregaciones por ventana temporal (horaria/diaria), ranking de estaciones, tabla de estado. Guarda en Parquet. | Modelado analitico, formatos columnares |
-| 4 | **Carga** | Consolida las tablas en una BD SQLite consultable con SQL. Ejecuta consultas de ejemplo. | Serving layer, warehouse |
-| 5 | **Visualizacion** | Genera un dashboard PNG: serie temporal, ranking, resumen diario, estado actual. | Consumo / BI |
+| 4 | **Forecasting** | Entrena una Linear Regression por estacion para predecir el PM2.5 de la hora siguiente (features: pm10, pm2_5, ozono, NO2, CO). Split cronologico train/test, reporta MAE y R². | Feature engineering, series temporales, evaluacion de modelos |
+| 5 | **Carga** | Consolida las tablas en una BD SQLite consultable con SQL. Ejecuta consultas de ejemplo. | Serving layer, warehouse |
+| 6 | **Visualizacion** | Genera un dashboard PNG: serie temporal, ranking, resumen diario, estado actual y forecast (real vs predicho). | Consumo / BI |
 
 ## Como ejecutar
 
@@ -57,7 +58,7 @@ python src/query_demo.py
 ```
 
 Salidas en `output/`:
-- `dashboard.png` - panel visual con 4 graficos
+- `dashboard.png` - panel visual con 5 graficos (incluye forecast PM2.5)
 - `airquality.db` - base de datos SQLite consultable
 
 > **Nota:** si hay conexion, usa datos reales de la API publica de Open-Meteo Air
@@ -67,6 +68,7 @@ Salidas en `output/`:
 ## Stack
 
 - **Python** (requests, pandas)
+- **scikit-learn** para el modelo de forecasting (Linear Regression)
 - **Parquet** via pyarrow (formato columnar, estandar en data engineering)
 - **SQLite** como serving layer consultable por SQL
 - **matplotlib** para el dashboard
@@ -81,14 +83,15 @@ edge-airq-pipeline/
 │   ├── ingest.py         # [1] ingesta + fallback offline
 │   ├── validate.py       # [2] data quality
 │   ├── transform.py      # [3] agregaciones analiticas
-│   ├── load.py           # [4] carga en SQLite
-│   ├── visualize.py      # [5] dashboard
-│   ├── run_pipeline.py   # orquestador (ejecuta 1->5)
+│   ├── forecast.py       # [4] forecasting PM2.5 (t+1h) por estacion
+│   ├── load.py           # [5] carga en SQLite
+│   ├── visualize.py      # [6] dashboard
+│   ├── run_pipeline.py   # orquestador (ejecuta 1->6)
 │   └── query_demo.py     # consultas SQL de ejemplo
 ├── data/
 │   ├── raw/              # JSON crudo por estacion
 │   ├── processed/        # dataset limpio (Parquet)
-│   └── warehouse/        # tablas analiticas (Parquet)
+│   └── warehouse/        # tablas analiticas + forecast.parquet (Parquet)
 ├── output/              # dashboard.png + airquality.db
 ├── requirements.txt
 └── README.md
