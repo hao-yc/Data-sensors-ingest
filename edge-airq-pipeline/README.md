@@ -94,9 +94,6 @@ edge-airq-pipeline/
 └── README.md
 ```
 
-## Proximos pasos (roadmap)
-
-- [ ] Carga incremental (solo lecturas nuevas) en vez de recargar todo
 - [ ] Streaming real con MQTT + broker (Mosquitto) en lugar de descarga batch
 - [ ] Orquestacion con Apache Airflow (convertir run_pipeline en un DAG)
 - [ ] Almacenamiento tipo lakehouse (Parquet + Iceberg/Delta) sobre S3/MinIO
