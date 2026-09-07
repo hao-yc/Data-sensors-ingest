@@ -7,7 +7,7 @@ aplicado a un escenario **IoT / edge**: cada estacion es analoga a un gateway co
 sus sensores, y el pipeline cubre todo el ciclo de vida del dato desde que se
 genera hasta que es util.
 
-![dashboard](output/dashboard.png)
+![dashboard](edge-airq-pipeline/output/dashboard.png)
 
 ## Por que este proyecto
 
